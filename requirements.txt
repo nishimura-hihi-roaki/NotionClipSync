@@ -1,0 +1,4 @@
+pyperclip==1.11.0
+notion-client==2.5.0
+rumps==0.4.0
+pynput==1.7.6
