@@ -7,7 +7,10 @@ from pathlib import Path
 from pynput import keyboard
 from datetime import datetime
 from dotenv import load_dotenv
-from notion_api import NotionAPI
+
+# ⚠️ 注意: notion_api.py (NotionAPIクラス) は同じディレクトリにあると仮定します。
+# 実際には、ビルド時に notion_api.py もデータファイルとして組み込む必要があります。
+from notion_api import NotionAPI 
 
 # .envファイルを読み込み
 load_dotenv()
@@ -20,16 +23,18 @@ def check_env_file():
     if not env_path.exists():
         return False
     
-    # ファイルが空でないかチェック
     try:
         with open(env_path, 'r', encoding='utf-8') as f:
             content = f.read().strip()
             if not content:
                 return False
-            
+                
             # 必須項目があるかチェック
             has_api_key = 'NOTION_API_KEY=' in content
             has_db_id = 'NOTION_DATABASE_ID=' in content
+            
+            # 設定ファイルが更新された場合を考慮し、環境変数を再読み込み
+            load_dotenv(override=True) 
             
             return has_api_key and has_db_id
     except:
@@ -37,38 +42,48 @@ def check_env_file():
 
 
 def run_setup():
-    """セットアップGUIを起動（修正版：ビルド環境でのパス問題を解消）"""
+    """セットアップGUIを起動（修正版：Resourcesフォルダのパスに対応）"""
     print("\n" + "=" * 50)
     print("初回セットアップが必要です")
     print("=" * 50)
     print("設定画面を起動しています...\n")
     
-    # 🚨 【修正ポイント】ビルドされた環境での setup_gui.py のパスを取得
-    # PyInstallerなどのビルドツールがファイルをバンドルしていることを前提
+    # 🚨 【修正ポイント】 setup_gui.py のパスを取得するロジックを更新
     if getattr(sys, 'frozen', False):
-        # バンドル環境: tempフォルダ（sys._MEIPASS）内にある
-        # または、データとして組み込まれた場所
+        # バンドル環境: setup_gui.pyは Contents/Resources に組み込まれている
         try:
-            # sys._MEIPASS が利用可能な場合の処理
+            # PyInstallerで --onefile を使った場合、sys._MEIPASS は一時展開ディレクトリを指す
+            # setup_gui.py が 'Resources/' の中にあると仮定してパスを構築
             base_path = sys._MEIPASS
         except AttributeError:
-            # sys._MEIPASS がない場合のフォールバック（通常は実行ファイルのあるディレクトリ）
-            base_path = os.path.dirname(sys.executable)
+            # sys._MEIPASS が使えない場合のフォールバック（通常は実行ファイルのあるディレクトリ）
+            base_path = os.path.dirname(os.path.abspath(sys.executable))
             
-        # setup_gui.py は実行ファイルと同じ階層か、バンドル内のトップにあると想定
-        setup_script_path = os.path.join(base_path, 'setup_gui.py')
+        # ⚠️ Resourcesフォルダ内に配置されている場合、そのパスを明示的に指定する必要があります。
+        # PyInstallerの組み込み方法によってパスは変わりますが、多くは sys._MEIPASS/setup_gui.py または
+        # 実行ファイルのパスが Contents/MacOS/ の場合、実行ファイルの親ディレクトリ（Contents/MacOS）
+        # の隣にある Resources フォルダを参照する必要があります。
         
+        # 🚨 最も一般的な PyInstaller/onefile の組み込みを想定したパス
+        setup_script_path = os.path.join(base_path, 'setup_gui.py') 
+        
+        # もし上記のパスで失敗する場合、代わりに .app/Contents/Resources/ の絶対パスを構築する
+        # (ただしこれは複雑で、ビルド環境に依存しすぎるため、まずは上記を試すべきです)
+    
     else:
         # 通常のPython実行環境
         setup_script_path = 'setup_gui.py'
 
-    # 起動前に存在チェック
+    # 🚨 【デバッグポイント】ターミナルから実行してパスを確認するためのログ
+    print(f"DEBUG: 実行しようとしているパス: {setup_script_path}")
+
     if not os.path.exists(setup_script_path):
-        print(f"\nエラー: セットアップスクリプトが見つかりません: {setup_script_path}")
+        # 実行ファイルが見つからない場合は、ループを防ぐためここで終了
+        print(f"FATAL ERROR: セットアップスクリプトが見つかりません! {setup_script_path}")
         sys.exit(1)
 
     try:
-        # 🚨 【修正ポイント】確実に解決されたパスでサブプロセスを起動
+        # 解決されたパスでサブプロセスを起動
         result = subprocess.run([sys.executable, setup_script_path], check=True)
         
         # セットアップが完了したか再確認
@@ -81,12 +96,11 @@ def run_setup():
         sys.exit(1)
     except Exception as e:
         print(f"\nエラー: セットアップGUIの起動中に問題が発生しました: {e}")
-        # 🚨 ループを防ぐため、異常終了時はアプリを終了
         sys.exit(1)
 
 
 def load_hotkey_config():
-    """ホットキー設定を読み込み"""
+    # ... (変更なし) ...
     default_display = "⌘⇧V"
     default_pynput = '<cmd>+<shift>+v'
     
@@ -100,7 +114,6 @@ def load_hotkey_config():
                 if line.startswith('HOTKEY='):
                     hotkey = line.split('=', 1)[1].strip().strip('"\'')
                     
-                    # 表示用からpynput用に変換
                     hotkey_map = {
                         "⌘⇧V": '<cmd>+<shift>+v',
                         "⌘⌃⇧V": '<cmd>+<ctrl>+<shift>+v',
@@ -149,7 +162,7 @@ class ClipToNotion(rumps.App):
         })
         self.hotkey_listener.start()
         
-        # 起動メッセージ
+        # 起動メッセージ (変更なし)
         print("\n" + "=" * 50)
         print("Clip to Notion - 起動完了")
         print("=" * 50)
@@ -159,12 +172,12 @@ class ClipToNotion(rumps.App):
         print("3. Notionに保存されます")
         print("\n⚠️  アクセシビリティ権限が必要です:")
         print("    システム設定 → プライバシーとセキュリティ")
-        print("    → アクセシビリティ → ターミナルを許可")
+        print("    → アクセシビリティ → このアプリを許可")
         print("\n終了: メニューバーアイコンから「終了」を選択")
         print("=" * 50 + "\n")
         
     def get_selected_text(self):
-        """AppleScriptを使って選択テキストを取得"""
+        # ... (変更なし) ...
         applescript = '''
         tell application "System Events"
             set frontApp to name of first application process whose frontmost is true
@@ -198,7 +211,7 @@ class ClipToNotion(rumps.App):
             return None
     
     def save_selection(self, _=None):
-        """選択テキストをNotionに保存"""
+        # ... (変更なし) ...
         try:
             print("\n選択テキストを取得中...")
             
@@ -233,12 +246,23 @@ class ClipToNotion(rumps.App):
             print(f"✗ エラー: {e}\n")
     
     def open_settings(self, _):
-        """設定画面を開いて再起動を促す"""
+        """設定画面を開いて再起動を促す（修正版：パス問題を解消）"""
         print("\n設定画面を起動しています...")
         
+        # 🚨 【修正ポイント】run_setupと同じロジックでsetup_gui.pyのパスを取得
+        if getattr(sys, 'frozen', False):
+            try:
+                base_path = sys._MEIPASS
+            except AttributeError:
+                base_path = os.path.dirname(os.path.abspath(sys.executable))
+                
+            setup_script_path = os.path.join(base_path, 'setup_gui.py')
+        else:
+            setup_script_path = 'setup_gui.py'
+
         try:
             # setup_gui.pyを起動
-            subprocess.run([sys.executable, 'setup_gui.py'], check=True)
+            subprocess.run([sys.executable, setup_script_path], check=True)
             
             # 設定が更新されたので再起動を促す
             print("\n設定が更新されました。")
@@ -250,16 +274,16 @@ class ClipToNotion(rumps.App):
             )
             
             if response == 1:  # OKボタンが押された
-                print("アプリを終了します。再度 python main.py で起動してください。")
+                print("アプリを終了します。再度アプリを起動してください。")
                 self.quit_app(None)
             
         except subprocess.CalledProcessError:
             print("\n設定変更がキャンセルされました。")
         except FileNotFoundError:
-            rumps.alert("エラー", "setup_gui.py が見つかりません。")
-    
+            rumps.alert("エラー", f"setup_gui.py が見つかりません: {setup_script_path}")
+            
     def quit_app(self, _):
-        """アプリを終了"""
+        # ... (変更なし) ...
         print("\nアプリケーションを終了します...")
         if self.hotkey_listener:
             self.hotkey_listener.stop()
