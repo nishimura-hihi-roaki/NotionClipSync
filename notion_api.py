@@ -1,7 +1,10 @@
 import os
 from notion_client import Client
 from datetime import datetime # 日付/時刻を扱うために必要です
+from dotenv import load_dotenv
 
+# .envファイルを読み込み
+load_dotenv()  # ← 追加
 
 class NotionAPI:
     def __init__(self):
