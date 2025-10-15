@@ -37,27 +37,51 @@ def check_env_file():
 
 
 def run_setup():
-    """セットアップGUIを起動"""
+    """セットアップGUIを起動（修正版：ビルド環境でのパス問題を解消）"""
     print("\n" + "=" * 50)
     print("初回セットアップが必要です")
     print("=" * 50)
     print("設定画面を起動しています...\n")
     
+    # 🚨 【修正ポイント】ビルドされた環境での setup_gui.py のパスを取得
+    # PyInstallerなどのビルドツールがファイルをバンドルしていることを前提
+    if getattr(sys, 'frozen', False):
+        # バンドル環境: tempフォルダ（sys._MEIPASS）内にある
+        # または、データとして組み込まれた場所
+        try:
+            # sys._MEIPASS が利用可能な場合の処理
+            base_path = sys._MEIPASS
+        except AttributeError:
+            # sys._MEIPASS がない場合のフォールバック（通常は実行ファイルのあるディレクトリ）
+            base_path = os.path.dirname(sys.executable)
+            
+        # setup_gui.py は実行ファイルと同じ階層か、バンドル内のトップにあると想定
+        setup_script_path = os.path.join(base_path, 'setup_gui.py')
+        
+    else:
+        # 通常のPython実行環境
+        setup_script_path = 'setup_gui.py'
+
+    # 起動前に存在チェック
+    if not os.path.exists(setup_script_path):
+        print(f"\nエラー: セットアップスクリプトが見つかりません: {setup_script_path}")
+        sys.exit(1)
+
     try:
-        # setup_gui.pyを起動して完了を待つ
-        result = subprocess.run([sys.executable, 'setup_gui.py'], check=True)
+        # 🚨 【修正ポイント】確実に解決されたパスでサブプロセスを起動
+        result = subprocess.run([sys.executable, setup_script_path], check=True)
         
         # セットアップが完了したか再確認
         if not check_env_file():
-            print("\n設定が保存されませんでした。")
-            print("再度セットアップを実行してください。")
+            print("\n設定が保存されませんでした。アプリを終了します。")
             sys.exit(1)
             
     except subprocess.CalledProcessError:
-        print("\nセットアップがキャンセルされました。")
+        print("\nセットアップがキャンセルされました。アプリを終了します。")
         sys.exit(1)
-    except FileNotFoundError:
-        print("\nエラー: setup_gui.py が見つかりません。")
+    except Exception as e:
+        print(f"\nエラー: セットアップGUIの起動中に問題が発生しました: {e}")
+        # 🚨 ループを防ぐため、異常終了時はアプリを終了
         sys.exit(1)
 
 
