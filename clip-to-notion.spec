@@ -7,8 +7,11 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
+	('setup_launcher.py', '.'),
         ('setup_gui.py', '.'),
         ('notion_api.py', '.'),
+	('setup_launcher.py', 'Contents/Frameworks'),
+
     ],
     hiddenimports=[
         'rumps',
@@ -76,5 +79,6 @@ app = BUNDLE(
         'NSHumanReadableCopyright': 'Copyright © 2025 nishimura-hihi-roaki',
         # アクセシビリティ権限のリクエスト用
         'NSAppleEventsUsageDescription': '選択したテキストを取得するために必要です',
+	'LSMinimumSystemVersion': '15.0',
     },
 )

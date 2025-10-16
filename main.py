@@ -239,9 +239,7 @@ class ClipToNotion(rumps.App):
             
             # 別プロセスで起動（非同期）
             subprocess.Popen(
-                [python_executable, launcher_script, str(ENV_FILE_PATH)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                [python_executable, launcher_script, str(ENV_FILE_PATH)]
             )
             
             print("設定画面を別ウィンドウで起動しました")
