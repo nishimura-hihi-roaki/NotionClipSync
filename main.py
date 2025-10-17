@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import rumps
-import subprocess
+import pyperclip
 import sys
 import os
 from pathlib import Path
@@ -104,7 +104,7 @@ class ClipToNotion(rumps.App):
         self.hotkey_display, self.hotkey_pynput = load_hotkey_config()
         
         self.menu = [
-            rumps.MenuItem(f"選択テキストを登録 ({self.hotkey_display})", callback=self.save_selection),
+            rumps.MenuItem(f"クリップボードを登録 ({self.hotkey_display})", callback=self.save_selection),
             None,
             rumps.MenuItem("設定を変更", callback=self.open_settings),
             None,
@@ -135,62 +135,31 @@ class ClipToNotion(rumps.App):
         print("Clip to Notion - 起動完了")
         print("=" * 50)
         print("使い方:")
-        print("1. テキストを選択")
+        print("1. テキストを選択して ⌘+C でコピー")
         print(f"2. {self.hotkey_display} を押す")
         print("3. Notionに保存されます")
-        print("\n⚠️  アクセシビリティ権限が必要です:")
-        print("    システム設定 → プライバシーとセキュリティ")
-        print("    → アクセシビリティ → このアプリを許可")
-        print(f"\n⚠️  ショートカットキーが動かない場合:")
-        print(f"    上記の設定を確認し、アプリを再起動してください")
         print("\n終了: メニューバーアイコンから「終了」を選択")
         print("=" * 50 + "\n")
         
     def get_selected_text(self):
-        """選択されたテキストを取得（AppleScript使用）"""
-        applescript = '''
-        tell application "System Events"
-            set frontApp to name of first application process whose frontmost is true
-            keystroke "c" using command down
-            delay 0.1
-        end tell
-        
-        set the clipboard to (the clipboard as text)
-        return the clipboard
-        '''
-        
+        """クリップボードから直接テキストを取得"""
         try:
-            result = subprocess.run(
-                ['osascript', '-e', applescript],
-                capture_output=True,
-                text=True,
-                timeout=3
-            )
-            
-            if result.returncode == 0:
-                return result.stdout.strip()
-            else:
-                print(f"AppleScript エラー: {result.stderr}")
-                return None
-        
-        except subprocess.TimeoutExpired:
-            print("✗ タイムアウト: 選択テキストの取得に時間がかかりすぎました")
-            return None
+            text = pyperclip.paste()
+            return text if text else None
         except Exception as e:
-            print(f"✗ エラー: {e}")
+            print(f"✗ クリップボード取得エラー: {e}")
             return None
     
     def save_selection(self, _=None):
-        """選択テキストをNotionに保存"""
+        """クリップボードのテキストをNotionに保存"""
         try:
-            print("\n選択テキストを取得中...")
+            print("\nクリップボードからテキストを取得中...")
             
             selected_text = self.get_selected_text()
             
             if not selected_text:
-                print("⚠️  選択テキストが取得できませんでした")
-                print("    - テキストを選択していますか？")
-                print("    - アクセシビリティ権限は付与されていますか？")
+                print("⚠️  クリップボードが空です")
+                print("    テキストをコピー(⌘+C)してから実行してください")
                 return
             
             if not selected_text.strip():
@@ -238,6 +207,7 @@ class ClipToNotion(rumps.App):
                 python_executable = sys.executable
             
             # 別プロセスで起動（非同期）
+            import subprocess
             subprocess.Popen(
                 [python_executable, launcher_script, str(ENV_FILE_PATH)]
             )
