@@ -7,6 +7,7 @@ from pathlib import Path
 from pynput import keyboard
 from datetime import datetime
 from dotenv import load_dotenv
+from notion_client import Client
 
 from notion_api import NotionAPI 
 
@@ -41,30 +42,114 @@ def check_env_file():
 
 
 def run_setup():
-    """セットアップGUIを表示"""
+    """セットアップをrumpsダイアログで実行"""
     print("\n" + "=" * 50)
     print("初回セットアップが必要です")
     print("=" * 50)
-    print("設定画面を起動しています...\n")
     
     ensure_env_directory()
     
+    # 説明ダイアログ
+    rumps.alert(
+        "Clip to Notion - 初期設定",
+        "Notionとの連携設定を行います。\n\n"
+        "1. Notion API Key を入力\n"
+        "2. Database ID を入力\n"
+        "3. ショートカットキーを選択\n\n"
+        "準備ができたら「OK」を押してください。",
+        ok="OK"
+    )
+    
+    # API Key入力
+    window = rumps.Window(
+        "Notion API Key を入力してください\n\n"
+        "取得方法: https://www.notion.so/my-integrations",
+        "Notion API Key",
+        default_text="",
+        ok="次へ",
+        cancel="キャンセル",
+        dimensions=(320, 24)
+    )
+    response = window.run()
+    
+    if not response.clicked:
+        print("セットアップがキャンセルされました")
+        sys.exit(1)
+    
+    api_key = response.text.strip()
+    
+    if not api_key:
+        rumps.alert("エラー", "API Key を入力してください")
+        sys.exit(1)
+    
+    # Database ID入力
+    window = rumps.Window(
+        "Database ID を入力してください\n\n"
+        "NotionデータベースのURLから32文字の英数字をコピー",
+        "Database ID",
+        default_text="",
+        ok="次へ",
+        cancel="キャンセル",
+        dimensions=(320, 24)
+    )
+    response = window.run()
+    
+    if not response.clicked:
+        print("セットアップがキャンセルされました")
+        sys.exit(1)
+    
+    db_id = response.text.strip()
+    
+    if not db_id:
+        rumps.alert("エラー", "Database ID を入力してください")
+        sys.exit(1)
+    
+    # 接続テスト
+    print("Notion接続をテスト中...")
     try:
-        from setup_gui import SetupGUI
-        
-        # ウィンドウを作成して表示
-        setup = SetupGUI(ENV_FILE_PATH)
-        setup.root.mainloop()
-        
-        # セットアップが完了したか再確認
-        if not check_env_file():
-            print("\n設定が保存されませんでした。アプリを終了します。")
-            sys.exit(1)
-            
+        client = Client(auth=api_key)
+        database = client.databases.retrieve(database_id=db_id)
+        db_name = database.get("title", [{}])[0].get("plain_text", "Unknown")
+        print(f"✓ 接続成功: {db_name}")
     except Exception as e:
-        print(f"\nエラー: セットアップGUIの起動中に問題が発生しました: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"✗ 接続失敗: {e}")
+        rumps.alert("接続エラー", f"Notionへの接続に失敗しました。\n\n{str(e)}\n\n設定を確認してください。")
+        sys.exit(1)
+    
+    # ショートカットキー選択
+    response = rumps.alert(
+        "ショートカットキーを選択",
+        f"接続成功: {db_name}\n\n"
+        "ショートカットキーを選択してください。\n\n"
+        "⌘=Command, ⇧=Shift, ⌃=Control, ⌥=Option",
+        ok="⌘⇧V (推奨)",
+        cancel="⌘⇧N",
+        other="⌘⌃⇧V"
+    )
+    
+    if response == 1:  # OK
+        hotkey = "⌘⇧V"
+    elif response == 0:  # Cancel
+        hotkey = "⌘⇧N"
+    else:  # Other
+        hotkey = "⌘⌃⇧V"
+    
+    # 設定を保存
+    env_content = f"""NOTION_API_KEY={api_key}
+NOTION_DATABASE_ID={db_id}
+HOTKEY={hotkey}
+"""
+    
+    try:
+        with open(ENV_FILE_PATH, 'w', encoding='utf-8') as f:
+            f.write(env_content)
+        
+        print(f"✓ 設定を保存しました: {ENV_FILE_PATH}")
+        rumps.alert("設定完了", f"設定を保存しました！\n\nデータベース: {db_name}\nショートカット: {hotkey}")
+        
+    except Exception as e:
+        print(f"✗ 保存失敗: {e}")
+        rumps.alert("保存エラー", f"設定の保存に失敗しました。\n\n{str(e)}")
         sys.exit(1)
 
 
@@ -185,41 +270,115 @@ class ClipToNotion(rumps.App):
             print(f"✗ エラー: {e}\n")
     
     def open_settings(self, _):
-        """設定画面を別プロセスで起動"""
+        """設定画面を開く（rumps ダイアログ版）"""
         print("\n設定画面を起動しています...")
         
+        # 現在の設定を読み込み
+        current_api_key = os.environ.get('NOTION_API_KEY', '')
+        current_db_id = os.environ.get('NOTION_DATABASE_ID', '')
+        
+        # API Key入力
+        window = rumps.Window(
+            "Notion API Key を入力してください\n\n"
+            "取得方法: https://www.notion.so/my-integrations",
+            "Notion API Key",
+            default_text=current_api_key,
+            ok="次へ",
+            cancel="キャンセル",
+            dimensions=(320, 24)
+        )
+        response = window.run()
+        
+        if not response.clicked:
+            print("設定変更がキャンセルされました")
+            return
+        
+        api_key = response.text.strip()
+        
+        if not api_key:
+            rumps.alert("エラー", "API Key を入力してください")
+            return
+        
+        # Database ID入力
+        window = rumps.Window(
+            "Database ID を入力してください\n\n"
+            "NotionデータベースのURLから32文字の英数字をコピー",
+            "Database ID",
+            default_text=current_db_id,
+            ok="次へ",
+            cancel="キャンセル",
+            dimensions=(320, 24)
+        )
+        response = window.run()
+        
+        if not response.clicked:
+            print("設定変更がキャンセルされました")
+            return
+        
+        db_id = response.text.strip()
+        
+        if not db_id:
+            rumps.alert("エラー", "Database ID を入力してください")
+            return
+        
+        # 接続テスト
+        print("Notion接続をテスト中...")
         try:
-            # setup_launcher.py のパスを取得
-            if getattr(sys, 'frozen', False):
-                # パッケージ化環境
-                base_path = sys._MEIPASS
-                launcher_script = os.path.join(base_path, 'setup_launcher.py')
-            else:
-                # 開発環境
-                launcher_script = 'setup_launcher.py'
+            client = Client(auth=api_key)
+            database = client.databases.retrieve(database_id=db_id)
+            db_name = database.get("title", [{}])[0].get("plain_text", "Unknown")
+            print(f"✓ 接続成功: {db_name}")
+        except Exception as e:
+            print(f"✗ 接続失敗: {e}")
+            rumps.alert("接続エラー", f"Notionへの接続に失敗しました。\n\n{str(e)}")
+            return
+        
+        # ショートカットキー選択
+        response = rumps.alert(
+            "ショートカットキーを選択",
+            f"接続成功: {db_name}\n\n"
+            "ショートカットキーを選択してください。",
+            ok="⌘⇧V (推奨)",
+            cancel="⌘⇧N",
+            other="⌘⌃⇧V"
+        )
+        
+        if response == 1:  # OK
+            hotkey = "⌘⇧V"
+        elif response == 0:  # Cancel
+            hotkey = "⌘⇧N"
+        else:  # Other
+            hotkey = "⌘⌃⇧V"
+        
+        # 設定を保存
+        env_content = f"""NOTION_API_KEY={api_key}
+NOTION_DATABASE_ID={db_id}
+HOTKEY={hotkey}
+"""
+        
+        try:
+            with open(ENV_FILE_PATH, 'w', encoding='utf-8') as f:
+                f.write(env_content)
             
-            # Python インタープリタのパスを取得
-            if getattr(sys, 'frozen', False):
-                # パッケージ化環境: sys.executable はアプリ本体なので使えない
-                # 代わりに、システムの Python を使う
-                python_executable = '/usr/bin/python3'
-            else:
-                python_executable = sys.executable
+            print(f"✓ 設定を保存しました: {ENV_FILE_PATH}")
             
-            # 別プロセスで起動（非同期）
-            import subprocess
-            subprocess.Popen(
-                [python_executable, launcher_script, str(ENV_FILE_PATH)]
+            response = rumps.alert(
+                "設定を更新しました",
+                f"設定を保存しました！\n\n"
+                f"データベース: {db_name}\n"
+                f"ショートカット: {hotkey}\n\n"
+                "変更を反映するにはアプリを再起動してください。\n"
+                "今すぐ再起動しますか？",
+                ok="再起動する",
+                cancel="後で"
             )
             
-            print("設定画面を別ウィンドウで起動しました")
-            print("設定を変更した場合は、アプリを再起動してください")
+            if response == 1:
+                self.quit_app(None)
             
         except Exception as e:
-            print(f"\n設定画面のエラー: {e}")
-            import traceback
-            traceback.print_exc()
-            rumps.alert("エラー", f"設定画面の起動に失敗しました:\n{str(e)}")
+            print(f"✗ 保存失敗: {e}")
+            rumps.alert("保存エラー", f"設定の保存に失敗しました。\n\n{str(e)}")
             
     def quit_app(self, _):
         """アプリケーションを終了"""
